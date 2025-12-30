@@ -373,9 +373,6 @@ class ScreenshotGenerator:
                 )
                 print("✅ Элемент найден, начинаем скриншоты")
             except TimeoutException:
-                with open('out.html', 'w') as file:
-                    file.write(driver.page_source)
-                self.minio_client.client.fput_object(self.minio_client.bucket_name, 'out.html', 'out.html')
                 print("⏳ Не удалось дождаться появления элемента")
                 return False
             except Exception as e:
