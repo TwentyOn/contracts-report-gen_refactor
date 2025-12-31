@@ -34,7 +34,7 @@ def connect_to_db():
     raise error
 
 
-def upload_to_s3(file, file_name):
+def upload_to_s3(file, file_name, minio_client=None):
     """
     Отправляет файл в S3-хранилище
     :param minio_client:
@@ -42,11 +42,12 @@ def upload_to_s3(file, file_name):
     :param file_name: имя файла - критически важно чтобы содержало ID отчёта для которого файл создан (19/filename.docx)
     :return:
     """
-    minio_client = MinIOClient()
+    if not minio_client:
+        minio_client = MinIOClient()
+        minio_client.connect()
     error = None
     for _ in range(3):
         try:
-            minio_client.connect()
             s3_report_path = os.getenv('S3_REPORT_PATH')
             output_path = '/'.join((s3_report_path, file_name))
             minio_client.upload_memory_file(output_path, file, len(file.getvalue()))
