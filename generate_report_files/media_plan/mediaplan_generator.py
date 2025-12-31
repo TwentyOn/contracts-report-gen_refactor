@@ -878,7 +878,6 @@ class MediaPlanGenerator:
             
         # Создаем Excel-файл
         print(f"\n📊 Создание Excel-файла...")
-        report_id = report.get('id')
         # Генерируем имя файла с датой и временем
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"Медиаплан_{timestamp}.xlsx"
@@ -889,16 +888,7 @@ class MediaPlanGenerator:
         if success:
             # читаем файл и переводим в байты
             file = io.BytesIO(open(output_path, 'rb').read())
-
-            # # отправляем в S3
-            # s3_file_path = os.getenv('S3_REPORT_PATH')
             filename = f"{report['id']}/" + filename
-            # s3_file_path = '/'.join((s3_file_path, filename))
-            # self.minio_client.put_object(
-            #     self.bucket_name, s3_file_path, file, len(file.getvalue()))
-            #
-            # # записываем адрес (S3) в БД
-            # write_s3path_to_bd(report.get('id'), os.getenv('MEDIAPLAN_COL_NAME'), s3_file_path)
 
             # удаляем файл
             os.remove(output_path)
