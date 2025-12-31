@@ -244,37 +244,37 @@ class MainProcessor:
 
             # сопровод
             soprovod_file, soprovod_filename = generate_soprovod(self.current_report_id)
-            soprovod_path_s3 = upload_to_s3(soprovod_file, soprovod_filename)
+            soprovod_path_s3 = upload_to_s3(soprovod_file, soprovod_filename, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('SOPROVOD_COL_NAME'), soprovod_path_s3)
 
             # акт
             act_file, act_filename = generate_act(self.current_report_id)
-            act_path_s3 = upload_to_s3(act_file, act_filename)
+            act_path_s3 = upload_to_s3(act_file, act_filename, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('ACT_COL_NAME'), act_path_s3)
 
             # ведомость
             vegomost_file, vedomost_filename = generate_vedomost(self.current_report_id)
-            vedomost_path_s3 = upload_to_s3(vegomost_file, vedomost_filename)
+            vedomost_path_s3 = upload_to_s3(vegomost_file, vedomost_filename, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('VEDOMOST_COL_NAME'), vedomost_path_s3)
 
             # архив со скриншотами объявлений
             screens_file, screens_filename = generate_screens_ads(self.current_report_id)
-            screens_path_s3 = upload_to_s3(screens_file, screens_filename)
+            screens_path_s3 = upload_to_s3(screens_file, screens_filename, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('SCREENSHOTS_COL_NAME'), screens_path_s3)
 
             # презентация
             pres_file, pres_filename = generate_presentation(self.current_report_id)
-            pres_path_s3 = upload_to_s3(pres_file, pres_filename)
+            pres_path_s3 = upload_to_s3(pres_file, pres_filename, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('PRESENTATION_COL_NAME'), pres_path_s3)
             #
             # медиаплан
             mediaplan_file, mediaplan_filename = generate_mediaplan(self.current_report_id)
-            mediaplan_path_s3 = upload_to_s3(mediaplan_file, mediaplan_filename)
+            mediaplan_path_s3 = upload_to_s3(mediaplan_file, mediaplan_filename, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('MEDIAPLAN_COL_NAME'), mediaplan_path_s3)
 
             # отчёт
             workreport_file, wordreport_filename = word_report_generate(self.current_report_id)
-            workreport_path_s3 = upload_to_s3(workreport_file, wordreport_filename)
+            workreport_path_s3 = upload_to_s3(workreport_file, wordreport_filename, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('CONTENT_REPORT_COL_NAME'), workreport_path_s3)
 
             # архив со всеми файлами
@@ -286,7 +286,7 @@ class MainProcessor:
                                                                (pres_file, pres_filename),
                                                                (mediaplan_file, mediaplan_filename),
                                                                (workreport_file, wordreport_filename))
-            all_reports_path = upload_to_s3(all_reports_zip, zip_name)
+            all_reports_path = upload_to_s3(all_reports_zip, zip_name, self.minio_client)
             write_s3path_to_bd(self.current_report_id, os.getenv('ALL_REPORT_ZIP'), all_reports_path)
 
             # статус обработки 3 - завершено
