@@ -16,10 +16,10 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Side, Border
 
-from utils.postprocessing_report_file import write_s3path_to_bd
 
 # Загружаем переменные окружения
 load_dotenv()
+
 
 class MediaPlanGenerator:
     def __init__(self):
@@ -32,7 +32,7 @@ class MediaPlanGenerator:
             'user': os.getenv('DB_USER'),
             'password': os.getenv('DB_PASSWORD')
         }
-        
+
         # Настройки MinIO
         self.minio_client = Minio(
             endpoint=os.getenv('S3_ENDPOINT_URL', 'minio.upk-mos.ru'),
@@ -40,16 +40,16 @@ class MediaPlanGenerator:
             secret_key=os.getenv('S3_SECRET_KEY'),
             secure=os.getenv('S3_SECURE', 'False').lower() == 'true'
         )
-        
+
         self.bucket_name = os.getenv('S3_BUCKET_NAME', 'dit-services-dev')
-        
+
         # Папка для результатов
         self.output_folder = 'mediaplan_results'
         self._ensure_output_folder()
 
         # Цвет заливки для заголовков
         self.header_fill = PatternFill(start_color='FFF2CD', end_color='FFF2CD', fill_type='solid')
-        
+
         # Счетчик для групп ключей и словарь соответствия
         self.key_group_counter = 1
         self.campaign_group_numbers = {}
@@ -67,10 +67,10 @@ class MediaPlanGenerator:
         try:
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor()
-            
+
             # Устанавливаем схему по умолчанию
             cursor.execute("SET search_path TO gen_report_context_contracts, public;")
-            
+
             # Получаем названия проектов
             placeholders = ','.join(['%s'] * len(project_ids))
             query = f"""
@@ -78,15 +78,15 @@ class MediaPlanGenerator:
             FROM projects p
             WHERE p.id IN ({placeholders})
             """
-            
+
             cursor.execute(query, project_ids)
             project_names = {row[0]: row[1] for row in cursor.fetchall()}
-            
+
             cursor.close()
             conn.close()
-            
+
             return project_names
-            
+
         except Exception as e:
             print(f"❌ Ошибка при получении названий проектов: {e}")
             return {}
@@ -97,11 +97,11 @@ class MediaPlanGenerator:
             print(f"🔌 Подключение к БД: {self.db_config['host']}:{self.db_config['port']}/{self.db_config['database']}")
             conn = psycopg2.connect(**self.db_config)
             cursor = conn.cursor()
-            
+
             # Устанавливаем схему по умолчанию
             cursor.execute("SET search_path TO gen_report_context_contracts, public;")
             print("✓ Схема установлена: gen_report_context_contracts")
-            
+
             # Получаем отчеты со статусом 1 и данные заявки
             query = """
             SELECT 
@@ -117,11 +117,11 @@ class MediaPlanGenerator:
             WHERE r.id_status = 1 AND (r.is_deleted = false OR r.is_deleted IS NULL)
             ORDER BY r.create_entry DESC
             """
-            
+
             print(f"🔍 Выполняем запрос...")
             cursor.execute(query)
             reports = []
-            
+
             for row in cursor.fetchall():
                 reports.append({
                     'id': row[0],
@@ -131,14 +131,14 @@ class MediaPlanGenerator:
                     'subject_contract': row[4],
                     'campaign_ids': row[5]  # JSONB с id кампаний
                 })
-            
+
             print(f"✅ Найдено отчетов для обработки: {len(reports)}")
-            
+
             cursor.close()
             conn.close()
-            
+
             return reports
-            
+
         except Exception as e:
             print(f"❌ Ошибка при получении отчетов из БД: {e}")
             return []
@@ -148,7 +148,7 @@ class MediaPlanGenerator:
         try:
             folder_path = f"gen_report_context_contracts/data_yandex_direct/{report_id}_результаты"
             object_path = f"{folder_path}/{filename}"
-            
+
             # Проверяем существование объекта
             if self.minio_client.stat_object(self.bucket_name, object_path):
                 # Загружаем объект
@@ -160,7 +160,7 @@ class MediaPlanGenerator:
             else:
                 print(f"⚠ Файл {filename} не найден")
                 return None
-                
+
         except Exception as e:
             print(f"✗ Ошибка при загрузке {filename}: {e}")
             return None
@@ -170,7 +170,7 @@ class MediaPlanGenerator:
         try:
             if not ads_data or not ads_data.get('result'):
                 return []
-            
+
             combinations = set()
             result = []
             for ad in ads_data.get('result', {}).get('Ads', []):
@@ -196,7 +196,7 @@ class MediaPlanGenerator:
         try:
             if not extensions_data or not isinstance(extensions_data, dict) or not ads_data:
                 return []
-            
+
             # Сначала найдем все ID уточнений, используемые в объявлениях кампании
             extension_ids = set()
             for ad in ads_data.get('result', {}).get('Ads', []):
@@ -205,25 +205,25 @@ class MediaPlanGenerator:
                     for ext in ad_extensions:
                         if ext.get('Type') == 'CALLOUT':
                             extension_ids.add(ext.get('AdExtensionId'))
-            
+
             # Если нет уточнений, возвращаем пустой список
             if not extension_ids:
                 return []
-            
+
             # Теперь найдем тексты уточнений по их ID, сохраняя порядок из файла
             callouts = []
             seen = set()  # Для проверки уникальности
             batch_data = next(iter(extensions_data.values()), {})
             if not batch_data or not batch_data.get('result'):
                 return []
-            
+
             for ext in batch_data.get('result', {}).get('AdExtensions', []):
                 if ext.get('Id') in extension_ids and ext.get('Type') == 'CALLOUT':
                     callout_text = ext.get('Callout', {}).get('CalloutText', '')
                     if callout_text and callout_text not in seen:
                         seen.add(callout_text)
                         callouts.append(callout_text)
-            
+
             return callouts  # Возвращаем список в порядке появления в файле
         except Exception as e:
             print(f"  ⚠ Ошибка при получении уточнений: {e}")
@@ -234,7 +234,7 @@ class MediaPlanGenerator:
         try:
             if not adgroups_data or not adgroups_data.get('result'):
                 return []
-            
+
             group_names = set()
             for group in adgroups_data.get('result', {}).get('AdGroups', []):
                 if group.get('CampaignId') == campaign_id:
@@ -251,7 +251,7 @@ class MediaPlanGenerator:
         try:
             if not sitelinks_data or not isinstance(sitelinks_data, dict) or not ads_data:
                 return []
-            
+
             # Сначала найдем все ID наборов быстрых ссылок, используемые в объявлениях кампании
             sitelink_set_ids = set()
             for ad in ads_data.get('result', {}).get('Ads', []):
@@ -259,47 +259,47 @@ class MediaPlanGenerator:
                     sitelink_set_id = ad.get('TextAd', {}).get('SitelinkSetId')
                     if sitelink_set_id:
                         sitelink_set_ids.add(str(sitelink_set_id))
-            
+
             # Если нет наборов быстрых ссылок, возвращаем пустой список
             if not sitelink_set_ids:
                 return []
-            
+
             sitelinks = []
             seen = set()
-            
+
             # Проходим по всем наборам данных
             for set_id, set_data in sitelinks_data.items():
                 # Проверяем, что это нужный нам набор быстрых ссылок
                 if set_id not in sitelink_set_ids:
                     continue
-                
+
                 if not isinstance(set_data, dict):
                     continue
-                
+
                 # Получаем список наборов быстрых ссылок
                 sitelinks_sets = set_data.get('result', {}).get('SitelinksSets', [])
                 if not sitelinks_sets:
                     continue
-                
+
                 # Обрабатываем каждый набор
                 for sitelinks_set in sitelinks_sets:
                     if not isinstance(sitelinks_set, dict):
                         continue
-                    
+
                     # Получаем список ссылок
                     links = sitelinks_set.get('Sitelinks', [])
                     if not isinstance(links, list):
                         continue
-                    
+
                     # Обрабатываем каждую ссылку
                     for link in links:
                         if not isinstance(link, dict):
                             continue
-                        
+
                         title = link.get('Title', '')
                         description = link.get('Description', '')
                         href = link.get('Href', '')
-                        
+
                         # Создаем уникальный ключ для комбинации
                         key = (title, description, href)
                         if key not in seen and all([title, description, href]):
@@ -309,7 +309,7 @@ class MediaPlanGenerator:
                                 'description': description,
                                 'href': href
                             })
-            
+
             return sitelinks
         except Exception as e:
             print(f"  ⚠ Ошибка при получении быстрых ссылок: {e}")
@@ -320,14 +320,14 @@ class MediaPlanGenerator:
         try:
             if not ads_data or not ads_data.get('result'):
                 return []
-            
+
             hrefs = set()
             for ad in ads_data.get('result', {}).get('Ads', []):
                 if ad.get('CampaignId') == campaign_id:
                     href = ad.get('TextAd', {}).get('Href')
                     if href:
                         hrefs.add(href)
-            
+
             return sorted(list(hrefs))
         except Exception as e:
             print(f"  ⚠ Ошибка при получении ссылок: {e}")
@@ -338,15 +338,15 @@ class MediaPlanGenerator:
         try:
             if not campaign:
                 return []
-                
+
             negative_keywords = campaign.get('NegativeKeywords')
             if not negative_keywords:
                 return []
-                
+
             items = negative_keywords.get('Items', [])
             if not items:
                 return []
-                
+
             return items  # Возвращаем список как есть, очистку кавычек делаем при добавлении в Excel
         except Exception as e:
             print(f"  ⚠ Ошибка при получении минус-слов: {e}")
@@ -356,7 +356,7 @@ class MediaPlanGenerator:
         """Получить список ключевых фраз для кампании"""
         if not keywords_data or not keywords_data.get('result'):
             return []
-        
+
         keywords = []
         for keyword in keywords_data.get('result', {}).get('Keywords', []):
             if keyword.get('CampaignId') == campaign_id:
@@ -365,7 +365,7 @@ class MediaPlanGenerator:
                 # Пропускаем автотаргетинг
                 if keyword_text and '---autotargeting' not in keyword_text:
                     keywords.append(keyword_text)
-        
+
         return keywords  # Возвращаем как есть, без сортировки
 
     def is_keyword_campaign(self, campaign_id: int, keywords_data: Dict) -> bool:
@@ -376,7 +376,8 @@ class MediaPlanGenerator:
         keywords = self.get_campaign_keywords(campaign_id, keywords_data)
         return len(keywords) > 0
 
-    def categorize_campaigns(self, campaigns_data: Dict, request_campaign_ids: Any, keywords_data: Dict) -> Dict[int, Dict[str, Dict[str, List[Dict]]]]:
+    def categorize_campaigns(self, campaigns_data: Dict, request_campaign_ids: Any, keywords_data: Dict) -> Dict[
+        int, Dict[str, Dict[str, List[Dict]]]]:
         """
         Разделить кампании на категории и проекты:
         - Сначала группируем по project_id
@@ -388,10 +389,10 @@ class MediaPlanGenerator:
         if not campaigns_data or not campaigns_data.get('result'):
             print("⚠ Нет данных кампаний")
             return {}
-        
+
         all_campaigns = campaigns_data.get('result', {}).get('Campaigns', [])
         print(f"📊 Всего кампаний в данных: {len(all_campaigns)}")
-        
+
         # Получаем список кампаний с их project_id из заявки
         allowed_campaigns = {}  # Dict[campaign_id, project_id]
         if request_campaign_ids:
@@ -414,18 +415,18 @@ class MediaPlanGenerator:
 
         # Группируем кампании по проектам
         projects = {}  # Dict[project_id, categories]
-        
+
         # Фильтруем и категоризируем кампании
         for campaign in all_campaigns:
             campaign_id = campaign.get('Id')
             campaign_name = campaign.get('Name', '')
-            
+
             # Проверяем, что кампания есть в списке из заявки
             if not allowed_campaigns or campaign_id not in allowed_campaigns:
                 continue
-                
+
             project_id = allowed_campaigns[campaign_id]
-            
+
             # Инициализируем структуру для проекта, если её ещё нет
             if project_id not in projects:
                 projects[project_id] = {
@@ -439,7 +440,7 @@ class MediaPlanGenerator:
                     },
                     'mk': []  # МК (пока не обрабатываем)
                 }
-            
+
             # Определяем категорию по имени
             if '/РСЯ/' in campaign_name:
                 # Определяем тип кампании (ключи/интересы)
@@ -488,11 +489,11 @@ class MediaPlanGenerator:
         invalid_chars = '[]:*?/\\'
         for char in invalid_chars:
             sheet_name = sheet_name.replace(char, ' ')
-        
+
         # Если имя слишком длинное, просто обрезаем
         if len(sheet_name) > max_length:
             sheet_name = sheet_name[:max_length]
-            
+
         return sheet_name.strip()
 
     def extract_campaign_type(self, campaign_name: str) -> str:
@@ -505,25 +506,27 @@ class MediaPlanGenerator:
             return 'Поиск'
         return ''
 
-    def create_mediaplan_excel(self, report_id: int, projects: Dict[int, Dict[str, Dict[str, List[Dict]]]], keywords_data: Dict, ads_data: Dict, extensions_data: Dict, sitelinks_data: Dict, adgroups_data: Dict, output_path: str) -> bool:
+    def create_mediaplan_excel(self, report_id: int, projects: Dict[int, Dict[str, Dict[str, List[Dict]]]],
+                               keywords_data: Dict, ads_data: Dict, extensions_data: Dict, sitelinks_data: Dict,
+                               adgroups_data: Dict, output_path: str) -> bool:
         """Создать Excel-документ с медиапланом"""
         try:
             # Создаем новую книгу Excel
             wb = openpyxl.Workbook()
-            
+
             # Удаляем стандартный лист
             wb.remove(wb.active)
-            
+
             # Сначала присваиваем номера группам для всех кампаний
             self.campaign_group_numbers = {}  # Сбрасываем словарь
             self.key_group_counter = 1  # Сбрасываем счетчик
-            
+
             # Получаем названия проектов
             project_names = self.get_project_names(list(projects.keys()))
-            
+
             # Сортируем проекты по ID для предсказуемого порядка
             sorted_project_ids = sorted(projects.keys())
-            
+
             # Проходим по всем проектам и кампаниям для нумерации
             for project_id in sorted_project_ids:
                 categories = projects[project_id]
@@ -534,103 +537,103 @@ class MediaPlanGenerator:
                         if campaign_id not in self.campaign_group_numbers:
                             self.campaign_group_numbers[campaign_id] = self.key_group_counter
                             self.key_group_counter += 1
-            
+
             # Теперь создаем листы Excel для каждого проекта
             for project_id in sorted_project_ids:
                 categories = projects[project_id]
                 project_name = project_names.get(project_id, f"Проект {project_id}")
-                
+
                 for category in ['rsy', 'search']:
                     # Обрабатываем только кампании с ключами
                     campaigns = categories[category]['keywords']
                     if not campaigns:
                         continue
-                    
+
                     category_name = 'РСЯ' if category == 'rsy' else 'Поиск'
-                    
+
                     # Создаем листы для ключей
                     sheet_name = self.sanitize_sheet_name(f"Ключи - {category_name} - {project_name}")
                     ws = wb.create_sheet(sheet_name)
-                    
+
                     # Добавляем заголовки
                     ws['A1'] = "Название / Тип"
                     ws['B1'] = "Минус-слова"
                     ws['C1'] = "Посадочная страница"
-                    
+
                     # Применяем заливку и жирный шрифт к заголовкам
                     for cell in ws[1]:
                         cell.fill = self.header_fill
                         cell.font = Font(bold=True)
-                    
+
                     # Фиксируем первую строку
                     ws.freeze_panes = 'A2'
-                    
+
                     current_row = 2
-                    
+
                     # Обрабатываем каждую кампанию
                     for campaign in campaigns:
                         campaign_id = campaign.get('Id')
                         campaign_name = campaign.get('Name', '')
-                        
+
                         # Добавляем название кампании как есть
                         cell = ws.cell(row=current_row, column=1, value=campaign_name)
                         cell.fill = self.header_fill
                         cell.font = Font(bold=True)
-                        
+
                         # Оставляем пустую ячейку для минус-слов в заголовке кампании без стилей
                         ws.cell(row=current_row, column=2, value="")
-                        
+
                         # Настраиваем ширину столбцов
                         self.adjust_column_widths(ws)
-                        
+
                         # Используем тот же номер группы, что и на листе "Ключи"
                         campaign_id = campaign.get('Id')
                         group_number = self.campaign_group_numbers.get(campaign_id, self.key_group_counter)
-                        
+
                         # Добавляем "Группа ключей N", используя ранее присвоенный номер
                         current_row += 1
                         group_number = self.campaign_group_numbers[campaign_id]
                         cell = ws.cell(row=current_row, column=1, value=f"Группа ключей {group_number}")
                         cell.fill = self.header_fill
                         cell.font = Font(bold=True)
-                        
+
                         # Получаем все данные
                         keywords = self.get_campaign_keywords(campaign_id, keywords_data)
                         minus_words = self.get_negative_keywords(campaign)
                         hrefs = self.get_unique_hrefs(campaign_id, ads_data)
-                        
+
                         # Определяем начальную строку для контента
                         content_start_row = current_row + 1
-                        
+
                         # Добавляем ключевые фразы
                         current_row = content_start_row
                         for keyword in keywords:
                             ws.cell(row=current_row, column=1, value=keyword)
                             current_row += 1
-                        
+
                         # Добавляем минус-слова в столбик
                         current_row = content_start_row
                         for minus_word in minus_words:
                             ws.cell(row=current_row, column=2, value=minus_word.strip('"'))
                             current_row += 1
-                        
+
                         # Добавляем ссылки в столбик
                         current_row = content_start_row
                         for href in hrefs:
                             ws.cell(row=current_row, column=3, value=href)
                             current_row += 1
-                        
+
                         # Обновляем current_row до максимального значения
                         current_row = max(
                             content_start_row + len(keywords),
                             content_start_row + len(minus_words),
                             content_start_row + len(hrefs)
                         )
-                    
+
                     # Создаем лист медиаплана для кампаний с ключами
                     sheet_name = self.sanitize_sheet_name(f"Медиаплан - {category_name} - {project_name}")
                     ws = wb.create_sheet(sheet_name)
-                    
+
                     # Настраиваем ширину столбцов
                     ws.column_dimensions['A'].width = 30  # Заголовок
                     ws.column_dimensions['B'].width = 30  # Текст
@@ -638,12 +641,12 @@ class MediaPlanGenerator:
                     ws.column_dimensions['D'].width = 30  # Быстрые ссылки
                     ws.column_dimensions['E'].width = 30  # Описание быстрых ссылок
                     ws.column_dimensions['F'].width = 30  # Адреса быстрых ссылок
-                    
+
                     # Создаем лист для кампаний с интересами
                     if categories[category]['interests']:
                         sheet_name = self.sanitize_sheet_name(f"Интересы - {category_name} - {project_name}")
                         ws_interests = wb.create_sheet(sheet_name)
-                        
+
                         # Настраиваем ширину столбцов
                         ws_interests.column_dimensions['A'].width = 30  # Интересы
                         ws_interests.column_dimensions['B'].width = 30  # Посадочная страница
@@ -653,52 +656,53 @@ class MediaPlanGenerator:
                         ws_interests.column_dimensions['F'].width = 30  # Быстрые ссылки
                         ws_interests.column_dimensions['G'].width = 30  # Описание быстрых ссылок
                         ws_interests.column_dimensions['H'].width = 30  # Адреса быстрых ссылок
-                        
+
                         current_row = 1
-                        
+
                         # Обрабатываем каждую кампанию с интересами
                         for campaign in categories[category]['interests']:
                             campaign_id = campaign.get('Id')
                             campaign_name = campaign.get('Name', '')
-                            
+
                             # Добавляем название кампании
                             cell = ws_interests.cell(row=current_row, column=1, value=campaign_name)
                             cell.fill = self.header_fill
                             cell.font = Font(bold=True)
-                            
+
                             # Добавляем заголовки столбцов
                             current_row += 1
-                            headers = ["Интересы", "Посадочная страница", "Заголовок", "Текст", 
-                                     "Уточнения", "Быстрые ссылки", "Описание быстрых ссылок", "Адреса быстрых ссылок"]
+                            headers = ["Интересы", "Посадочная страница", "Заголовок", "Текст",
+                                       "Уточнения", "Быстрые ссылки", "Описание быстрых ссылок",
+                                       "Адреса быстрых ссылок"]
                             for col, header in enumerate(headers, 1):
                                 cell = ws_interests.cell(row=current_row, column=col, value=header)
                                 cell.fill = self.header_fill
                                 cell.font = Font(bold=True)
-                            
+
                             # Получаем все данные
                             adgroups = self.get_campaign_adgroups(campaign_id, adgroups_data)
                             hrefs = self.get_unique_hrefs(campaign_id, ads_data)
                             ad_combinations = self.get_unique_ad_combinations(campaign_id, ads_data)
                             callouts = self.get_campaign_callouts(campaign_id, extensions_data, ads_data)
                             sitelinks = self.get_campaign_sitelinks(campaign_id, sitelinks_data, ads_data)
-                            
+
                             # Добавляем данные
                             content_row = current_row + 1
                             max_rows = max(len(adgroups), len(hrefs), len(ad_combinations), len(sitelinks), 1)
-                            
+
                             # Добавляем интересы (названия групп)
                             for i, group_name in enumerate(adgroups):
                                 ws_interests.cell(row=content_row + i, column=1, value=group_name)
-                            
+
                             # Добавляем посадочные страницы
                             for i, href in enumerate(hrefs):
                                 ws_interests.cell(row=content_row + i, column=2, value=href)
-                            
+
                             # Добавляем комбинации заголовок-текст
                             for i, ad in enumerate(ad_combinations):
                                 ws_interests.cell(row=content_row + i, column=3, value=ad['title'])
                                 ws_interests.cell(row=content_row + i, column=4, value=ad['text'])
-                            
+
                             # Добавляем уточнения
                             if callouts:
                                 # Объединяем ячейки для уточнений
@@ -711,63 +715,64 @@ class MediaPlanGenerator:
                                     )
                                 cell = ws_interests.cell(row=content_row, column=5, value="\n".join(callouts))
                                 cell.alignment = Alignment(wrapText=True, vertical='top')
-                            
+
                             # Добавляем быстрые ссылки
                             for i, link in enumerate(sitelinks):
                                 ws_interests.cell(row=content_row + i, column=6, value=link['title'])
                                 ws_interests.cell(row=content_row + i, column=7, value=link['description'])
                                 ws_interests.cell(row=content_row + i, column=8, value=link['href'])
-                            
+
                             # Обновляем current_row для следующей кампании
                             current_row = content_row + max_rows
-                    
+
                     current_row = 1
-                    
+
                     # Обрабатываем каждую кампанию
                     for campaign in campaigns:
                         campaign_id = campaign.get('Id')
                         campaign_name = campaign.get('Name', '')
-                        
+
                         # Добавляем номер группы ключей, используя ранее присвоенный номер
                         campaign_id = campaign.get('Id')
                         group_number = self.campaign_group_numbers[campaign_id]
                         cell = ws.cell(row=current_row, column=1, value=f"Группа ключей {group_number}")
                         cell.fill = self.header_fill
                         cell.font = Font(bold=True)
-                        
+
                         # Добавляем название кампании
                         current_row += 1
                         cell = ws.cell(row=current_row, column=1, value=campaign_name)
                         cell.fill = self.header_fill
                         cell.font = Font(bold=True)
-                        
+
                         # Добавляем заголовки столбцов
                         current_row += 1
-                        headers = ["Заголовок", "Текст", "Уточнения", "Быстрые ссылки", "Описание быстрых ссылок", "Адреса быстрых ссылок"]
+                        headers = ["Заголовок", "Текст", "Уточнения", "Быстрые ссылки", "Описание быстрых ссылок",
+                                   "Адреса быстрых ссылок"]
                         for col, header in enumerate(headers, 1):
                             cell = ws.cell(row=current_row, column=col, value=header)
                             cell.fill = self.header_fill
                             cell.font = Font(bold=True)
-                        
+
                         # Получаем данные для кампании
                         ad_combinations = self.get_unique_ad_combinations(campaign_id, ads_data)
                         callouts = self.get_campaign_callouts(campaign_id, extensions_data, ads_data)
                         sitelinks = self.get_campaign_sitelinks(campaign_id, sitelinks_data, ads_data)
-                        
+
                         # Добавляем данные
                         content_row = current_row + 1
-                        
+
                         # Добавляем комбинации заголовок-текст
                         for ad in ad_combinations:
                             ws.cell(row=content_row, column=1, value=ad['title'])
                             ws.cell(row=content_row, column=2, value=ad['text'])
                             content_row += 1
-                        
+
                         # Добавляем уточнения и объединяем ячейки
                         if callouts:
                             # Вычисляем количество строк для объединения
                             max_rows = max(len(ad_combinations), len(sitelinks), 1)
-                            
+
                             # Объединяем ячейки
                             if max_rows > 1:
                                 ws.merge_cells(
@@ -776,12 +781,12 @@ class MediaPlanGenerator:
                                     end_row=current_row + max_rows,
                                     end_column=3
                                 )
-                            
+
                             # Добавляем текст с переносами строк
                             cell = ws.cell(row=current_row + 1, column=3, value="\n".join(callouts))
                             # Включаем перенос строк и выравнивание по верху
                             cell.alignment = Alignment(wrapText=True, vertical='top')
-                        
+
                         # Добавляем быстрые ссылки
                         content_row = current_row + 1
                         for link in sitelinks:
@@ -789,19 +794,19 @@ class MediaPlanGenerator:
                             ws.cell(row=content_row, column=5, value=link['description'])
                             ws.cell(row=content_row, column=6, value=link['href'])
                             content_row += 1
-                        
+
                         # Обновляем current_row до максимального значения
                         max_rows = max(
                             len(ad_combinations),
                             len(sitelinks)
                         )
                         current_row = current_row + max_rows + 1
-            
+
             # Добавляем сетку для всех листов медиаплана
-            thin_border = Border(left=Side(style='thin'), 
-                              right=Side(style='thin'), 
-                              top=Side(style='thin'), 
-                              bottom=Side(style='thin'))
+            thin_border = Border(left=Side(style='thin'),
+                                 right=Side(style='thin'),
+                                 top=Side(style='thin'),
+                                 bottom=Side(style='thin'))
 
             for sheet_name in wb.sheetnames:
                 if 'Медиаплан' in sheet_name or 'Интересы' in sheet_name:
@@ -810,72 +815,71 @@ class MediaPlanGenerator:
                         for cell in row:
                             cell.border = thin_border
 
-
-            
             # Сохраняем файл
             wb.save(output_path)
             print(f"✅ Excel-файл создан: {output_path}")
             return True
-            
+
         except Exception as e:
             print(f"❌ Ошибка при создании Excel-файла: {e}")
             import traceback
             traceback.print_exc()
             return False
 
-    def process_report(self, report: Dict) -> None:
+    def process_report(self, report: Dict) -> None | tuple[bytes, str]:
         """Обработать один отчет"""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"ОБРАБОТКА ОТЧЕТА #{report['id']}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"ID отчета: {report['id']}")
         print(f"ID договора: {report['id_contracts']}")
         print(f"ID заявки: {report['id_requests']}")
         print(f"Номер договора: {report['number_contract']}")
         print(f"Предмет договора: {report['subject_contract']}")
-        
+
         # Загружаем данные из MinIO
         print(f"\n📥 Загрузка данных из MinIO...")
         campaigns_data = self.load_file_from_minio(report['id'], 'campaigns.json')
-        
+
         if not campaigns_data:
             print("❌ Не удалось загрузить campaigns.json")
             return
-        
+
         keywords_data = self.load_file_from_minio(report['id'], f'keywords_traffic_forecast_{report["id"]}.json')
         if not keywords_data:
             print(f"❌ Не удалось загрузить keywords_traffic_forecast_{report['id']}.json")
             return
-        
+
         # Категоризируем кампании
         print(f"\n🔍 Категоризация кампаний...")
         categories = self.categorize_campaigns(campaigns_data, report['campaign_ids'], keywords_data)
-        
+
         if not categories:
             print("⚠ Нет кампаний для обработки")
+            raise IOError('Нет кампаний для обработки')
             return
-        
+
         # Загружаем все необходимые данные
         ads_data = self.load_file_from_minio(report['id'], f'ads_report_{report["id"]}.json')
         if not ads_data:
             print(f"❌ Не удалось загрузить ads_report_{report['id']}.json")
             return
-            
+
         extensions_data = self.load_file_from_minio(report['id'], f'extensions_{report["id"]}.json')
         if not extensions_data:
             print(f"❌ Не удалось загрузить extensions_{report['id']}.json")
             return
-            
+
         sitelinks_data = self.load_file_from_minio(report['id'], f'sitelinks_{report["id"]}.json')
         if not sitelinks_data:
             print(f"❌ Не удалось загрузить sitelinks_{report['id']}.json")
             return
-            
+
         adgroups_data = self.load_file_from_minio(report['id'], f'adgroups_{report["id"]}.json')
         if not adgroups_data:
             print(f"❌ Не удалось загрузить adgroups_{report['id']}.json")
             return
-            
+
         # Создаем Excel-файл
         print(f"\n📊 Создание Excel-файла...")
         # Генерируем имя файла с датой и временем
@@ -883,8 +887,9 @@ class MediaPlanGenerator:
         filename = f"Медиаплан_{timestamp}.xlsx"
         output_path = os.path.join(self.output_folder, filename)
 
-        success = self.create_mediaplan_excel(report['id'], categories, keywords_data, ads_data, extensions_data, sitelinks_data, adgroups_data, output_path)
-        
+        success = self.create_mediaplan_excel(report['id'], categories, keywords_data, ads_data, extensions_data,
+                                              sitelinks_data, adgroups_data, output_path)
+
         if success:
             # читаем файл и переводим в байты
             file = io.BytesIO(open(output_path, 'rb').read())
@@ -901,16 +906,16 @@ class MediaPlanGenerator:
     def run(self):
         """Основной метод запуска обработки"""
         print("🚀 Запуск генератора медиапланов...")
-        
+
         # Получаем отчеты для обработки
         reports = self.get_pending_reports()
-        
+
         if not reports:
             print("📭 Нет отчетов со статусом 1 для обработки")
             return
-        
+
         print(f"📋 Найдено отчетов для обработки: {len(reports)}")
-        
+
         # Обрабатываем каждый отчет
         for report in reports:
             try:
@@ -920,7 +925,7 @@ class MediaPlanGenerator:
                 import traceback
                 traceback.print_exc()
                 continue
-        
+
         print(f"\n✅ Обработка завершена. Обработано отчетов: {len(reports)}")
 
 
@@ -939,6 +944,7 @@ def generate_mediaplan(report_id):
         print(f"❌ Критическая ошибка: {e}")
         import traceback
         traceback.print_exc()
+        raise e
 
 
 if __name__ == "__main__":
