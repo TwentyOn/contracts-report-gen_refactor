@@ -8,7 +8,6 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.shared import OxmlElement, qn
 from dotenv import load_dotenv
 
-from utils.postprocessing_report_file import upload_to_s3, write_s3path_to_bd
 
 # Загружаем переменные из .env файла
 load_dotenv()
@@ -32,7 +31,8 @@ def connect_to_db():
         return conn
     except Exception as e:
         print(f"Ошибка подключения к БД: {e}")
-        return None
+        # return None
+        raise e
 
 def get_vedomost_data(conn, report_id):
     """Получение данных для ведомости"""
@@ -166,7 +166,8 @@ def get_vedomost_data(conn, report_id):
             
     except Exception as e:
         print(f"Ошибка при получении данных: {e}")
-        return None
+        # return None
+        raise e
     finally:
         cursor.close()
 
@@ -545,6 +546,7 @@ def create_vedomost_document(data, report_id):
         
     except Exception as e:
         print(f"Ошибка при создании ведомости: {e}")
+        raise e
 
 def get_month_name(month_num):
     """Преобразование номера месяца в название"""
