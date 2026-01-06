@@ -1102,7 +1102,8 @@ class MainProcessor:
 
         except Exception as e:
             print(f"❌ Ошибка генерации скриншотов: {e}")
-            return False
+            # return False
+            raise e
 
 
 def main():
