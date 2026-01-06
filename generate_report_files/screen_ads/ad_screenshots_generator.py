@@ -21,7 +21,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 import tempfile
 import base64
 
-from utils.postprocessing_report_file import upload_to_s3, write_s3path_to_bd
 
 from generate_report_files.screen_ads.postprocess import create_and_packaging_zip, html_remove
 
