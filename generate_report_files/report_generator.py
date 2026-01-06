@@ -27,7 +27,6 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import parse_xml, OxmlElement
 from docx.oxml.ns import qn
 
-from utils.postprocessing_report_file import write_s3path_to_bd
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -128,11 +127,16 @@ class ReportGenerator:
             return result[0] if result else None
             
         except Exception as e:
+            # !!! здесь иногда возникает ошибка: server closed the connection unexpectedly
+            #         This probably means the server terminated abnormally
+            #         before or while processing the request.
+            # пока не удалось понять почему
             print(f"❌ Ошибка при получении текста отчета: {e}")
             if conn:
                 cursor.close()
                 conn.close()
-            return None
+            # return None
+            raise e
 
     def get_report_data(self, report_id: int) -> Optional[Dict]:
         """Получить данные отчета из БД"""
@@ -287,7 +291,8 @@ class ReportGenerator:
             print(f"❌ Ошибка при получении данных отчета: {e}")
             if conn:
                 conn.close()
-            return None
+            # return None
+            raise e
 
     def get_month_name(self, month_num: int) -> str:
         """Преобразование номера месяца в название"""
@@ -740,8 +745,8 @@ class ReportGenerator:
             if silent and 'NoSuchKey' in str(e):
                 return None
             print(f"❌ Ошибка загрузки изображения {file_path}: {str(e)}")
-            return None
-
+            # return None
+            raise e
     def check_file_exists_in_minio(self, file_path: str) -> bool:
         """Проверить существование файла в MinIO
         
@@ -822,7 +827,8 @@ class ReportGenerator:
             
         except Exception as e:
             print(f"❌ Ошибка при получении изображений: {e}")
-            return []
+            raise e
+            # return []
 
     def get_campaign_project_mapping(self, campany_yandex_direct_json) -> Dict[int, int]:
         """Получить mapping campaign_id -> project_id из поля requests.campany_yandex_direct
@@ -1713,6 +1719,7 @@ class ReportGenerator:
 
         except Exception as e:
             print(f"❌ Ошибка при создании таблицы ключевых фраз: {e}")
+            raise e
 
     def create_section_9(self, doc: Document, report_data: Dict, report_id: int) -> None:
         """Создать восьмой раздел отчета с изображениями"""
@@ -2019,11 +2026,11 @@ class ReportGenerator:
     def _add_campaign_data_rows(self, table, campaign):
         """Добавить строки данных для кампании"""
         # Получаем тексты из БД для форматирования
-        report_43 = self.get_report_text('report_43')
-        report_44 = self.get_report_text('report_44')
-        report_45 = self.get_report_text('report_45')
-        report_46 = self.get_report_text('report_46')
-        report_47 = self.get_report_text('report_47')
+        # report_43 = self.get_report_text('report_43')
+        # report_44 = self.get_report_text('report_44')
+        # report_45 = self.get_report_text('report_45')
+        # report_46 = self.get_report_text('report_46')
+        # report_47 = self.get_report_text('report_47')
 
         # Находим максимальное количество строк для данной кампании
         # Учитываем только столбцы 1, 2, 4, 5 (исключаем столбец 3 - уточнения)
@@ -2187,7 +2194,8 @@ class ReportGenerator:
             return self.load_file_from_minio(report_id, filename)
         except Exception as e:
             print(f"❌ Ошибка при загрузке campaign_stats_summary: {e}")
-            return None
+            # return None
+            raise e
 
     def load_campaign_stats(self, report_id: int) -> Optional[Dict]:
         """Загрузить данные из campaign_stats файла из MinIO"""
@@ -2197,7 +2205,8 @@ class ReportGenerator:
             return self.load_file_from_minio(report_id, filename)
         except Exception as e:
             print(f"❌ Ошибка при загрузке campaign_stats: {e}")
-            return None
+            # return None
+            raise e
 
     def load_adgroup_stats(self, report_id: int) -> Optional[Dict]:
         """Загрузить данные из adgroup_stats файла из MinIO"""
@@ -2207,7 +2216,8 @@ class ReportGenerator:
             return self.load_file_from_minio(report_id, filename)
         except Exception as e:
             print(f"❌ Ошибка при загрузке adgroup_stats: {e}")
-            return None
+            # return None
+            raise e
 
     def load_ad_stats(self, report_id: int) -> Optional[Dict]:
         """Загрузить данные из ad_stats файла из MinIO"""
@@ -2217,7 +2227,8 @@ class ReportGenerator:
             return self.load_file_from_minio(report_id, filename)
         except Exception as e:
             print(f"❌ Ошибка при загрузке ad_stats: {e}")
-            return None
+            # return None
+            raise e
 
     def load_ads_report(self, report_id: int) -> Optional[Dict]:
         """Загрузить данные из ads_report файла из MinIO"""
@@ -2227,7 +2238,8 @@ class ReportGenerator:
             return self.load_file_from_minio(report_id, filename)
         except Exception as e:
             print(f"❌ Ошибка при загрузке ads_report: {e}")
-            return None
+            # return None
+            raise e
 
     def load_campaigns(self, report_id: int) -> Optional[Dict]:
         """Загрузить данные из campaigns файла из MinIO"""
@@ -2237,7 +2249,8 @@ class ReportGenerator:
             return self.load_file_from_minio(report_id, filename)
         except Exception as e:
             print(f"❌ Ошибка при загрузке campaigns: {e}")
-            return None
+            # return None
+            raise e
 
     def get_top_ads(self, report_id: int) -> List[Dict]:
         """Получить топ объявлений по кликам с фильтрацией по BounceRate"""
@@ -2319,7 +2332,8 @@ class ReportGenerator:
             
         except Exception as e:
             print(f"❌ Ошибка при получении топ объявлений: {e}")
-            return []
+            # return []
+            raise e
 
     def format_cost_from_kopecks(self, kopecks):
         """Конвертировать копейки в рубли с форматированием"""
@@ -2746,6 +2760,7 @@ class ReportGenerator:
                 
         except Exception as e:
             print(f"❌ Ошибка при добавлении изображений: {e}")
+            raise e
 
         # 12. Пустая строка
         doc.add_paragraph()
@@ -3070,6 +3085,7 @@ class ReportGenerator:
                     
         except Exception as e:
             print(f"❌ Ошибка при добавлении скриншотов из url_2: {e}")
+            raise e
 
     def create_section_11(self, doc: Document, report_data: Dict, report_id: int) -> None:
         """Создать одиннадцатый раздел отчета"""
@@ -3200,6 +3216,7 @@ class ReportGenerator:
                     
         except Exception as e:
             print(f"❌ Ошибка при добавлении скриншотов из url_3: {e}")
+            raise e
 
         # 6. Пустая строка после скриншотов
         doc.add_paragraph()
@@ -3788,7 +3805,8 @@ class ReportGenerator:
                 conn.close()
             import traceback
             traceback.print_exc()
-            return []
+            # return []
+            raise e
 
     def create_section_13(self, doc: Document, report_data: Dict, report_id: int) -> None:
         """Создать тринадцатый раздел отчета"""
@@ -3900,6 +3918,7 @@ class ReportGenerator:
             print(f"❌ Критическая ошибка: {e}")
             import traceback
             traceback.print_exc()
+            raise e
 
 
 def word_report_generate(report_id):
