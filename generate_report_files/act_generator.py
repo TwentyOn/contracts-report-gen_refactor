@@ -8,7 +8,6 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.shared import OxmlElement, qn
 from dotenv import load_dotenv
 
-from utils.postprocessing_report_file import upload_to_s3, write_s3path_to_bd
 
 # Загружаем переменные из .env файла
 load_dotenv('.env')
@@ -82,14 +81,18 @@ DB_CONFIG = {
 }
 
 
-def connect_to_db():
+def connect_to_db(retries=3):
     """Подключение к базе данных с обработкой ошибок"""
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        return conn
-    except Exception as e:
-        print(f"Ошибка подключения к БД: {e}")
-        return None
+    for i in range(retries):
+        try:
+            print(f'попытка подключения к БД {i+1}. ({__name__})')
+            conn = psycopg2.connect(**DB_CONFIG)
+            return conn
+        except Exception as e:
+            print(f"Ошибка подключения к БД: {e}")
+            # return None
+            if i == retries - 1:
+                raise e
 
 
 def get_act_data(conn, report_id):
@@ -259,7 +262,8 @@ def get_act_data(conn, report_id):
 
     except Exception as e:
         print(f"Ошибка при получении данных: {e}")
-        return None
+        # return None
+        raise e
     finally:
         cursor.close()
 
@@ -1014,6 +1018,7 @@ def create_act_document(data, report_id):
 
     except Exception as e:
         print(f"Ошибка при создании акта: {e}")
+        raise e
 
 
 def generate_act(report_id):
