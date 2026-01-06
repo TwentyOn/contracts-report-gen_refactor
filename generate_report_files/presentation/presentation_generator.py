@@ -20,7 +20,6 @@ import requests
 from io import BytesIO
 from PIL import Image
 
-from utils.postprocessing_report_file import write_s3path_to_bd
 
 # Загружаем переменные окружения
 load_dotenv()
