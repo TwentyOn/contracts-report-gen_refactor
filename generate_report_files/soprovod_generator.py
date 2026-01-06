@@ -9,9 +9,6 @@ from docx.oxml.shared import OxmlElement, qn
 from dotenv import load_dotenv
 from minio import Minio
 
-from utils.postprocessing_report_file import upload_to_s3
-from utils.postprocessing_report_file import write_s3path_to_bd
-
 # Загружаем переменные из .env файла
 load_dotenv()
 
@@ -46,7 +43,8 @@ def connect_to_db():
         return conn
     except Exception as e:
         print(f"Ошибка подключения к БД: {e}")
-        return None
+        raise e
+        # return None
 
 
 def get_report_data(conn, report_id):
@@ -166,7 +164,8 @@ def get_report_data(conn, report_id):
 
     except Exception as e:
         print(f"Ошибка при получении данных: {e}")
-        return None
+        raise e
+        # return None
     finally:
         cursor.close()
 
@@ -316,6 +315,7 @@ def create_word_document(data, report_id):
 
     except Exception as e:
         print(f"Ошибка при создании документа: {e}")
+        raise e
 
 
 def generate_soprovod(report_id):
