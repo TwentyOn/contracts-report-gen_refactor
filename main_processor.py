@@ -22,20 +22,12 @@ from generate_report_urls_refactored import ReportURLGenerator
 from generate_screenshots_refactored import ScreenshotGenerator
 from ad_screenshots_very_good_generator import very_good_screenshot_generator
 
-from generate_report_files.soprovod_generator import generate_soprovod
-from generate_report_files.act_generator import generate_act
-from generate_report_files.statement_generator import generate_vedomost
-from generate_report_files.screen_ads.ad_screenshots_generator import generate_screens_ads
-from generate_report_files.presentation.presentation_generator import generate_presentation
-from generate_report_files.media_plan.mediaplan_generator import generate_mediaplan
-from generate_report_files.report_generator import word_report_generate
-
-from utils.postprocessing_report_file import upload_to_s3, write_s3path_to_bd, write_status, all_reports_zip_create
+from utils.postprocessing_report_file import FileFormatter, write_status
 
 # Загружаем переменные окружения
 load_dotenv('.env')
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='[{asctime}] #{levelname:4} {name}:{lineno} - {message}', style='{')
 logger = logging.getLogger('main_processor.py')
 
 
@@ -112,13 +104,15 @@ class MainProcessor:
 
             if not request_data or not contract_data:
                 print("❌ Не найдены данные заявки или договора")
-                return False
+                raise IOError('Не найдены данные заявки или договор')
+                # return False
 
             # Извлекаем ID кампаний
             campaign_ids = self.db.extract_campaign_ids(request_data.get('campany_yandex_direct'))
             if not campaign_ids:
                 print("❌ Не найдены ID кампаний")
-                return False
+                raise IOError('Не найдены ID кампаний')
+                # return False
 
             print(f"📊 Найдено кампаний: {len(campaign_ids)}")
             print(f"📊 ID кампаний: {campaign_ids}")
@@ -126,7 +120,8 @@ class MainProcessor:
             # Настраиваем API клиент
             if not self.setup_api_client(yandex_accounts, contract_data):
                 print("❌ Не удалось настроить API клиент")
-                return False
+                raise IOError('Не удалось настроить API клиент')
+                # return False
 
             # статус отчёта 2 - в обработке
             write_status(report['id'], 2)
@@ -235,70 +230,29 @@ class MainProcessor:
                 print("⚠️ Ошибка генерации скриншотов, продолжаем...")
 
             # 13. Генерация very_good_ads
-            logger.info('Шаг 13: Формирую very_good_ads...')
+            logger.info('Шаг 13: Исполнение ad_screenshots_very_good_generator.py...')
             very_good_screenshot_generator(self.current_report_id)
 
             # 14. Генерация файлов-отчётов
             # print('Формирование файлов отчёта...')
             logger.info('Шаг 14: Формирую файлы отчётов...')
 
-            # сопровод
-            soprovod_file, soprovod_filename = generate_soprovod(self.current_report_id)
-            soprovod_path_s3 = upload_to_s3(soprovod_file, soprovod_filename, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('SOPROVOD_COL_NAME'), soprovod_path_s3)
-
-            # акт
-            act_file, act_filename = generate_act(self.current_report_id)
-            act_path_s3 = upload_to_s3(act_file, act_filename, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('ACT_COL_NAME'), act_path_s3)
-
-            # ведомость
-            vegomost_file, vedomost_filename = generate_vedomost(self.current_report_id)
-            vedomost_path_s3 = upload_to_s3(vegomost_file, vedomost_filename, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('VEDOMOST_COL_NAME'), vedomost_path_s3)
-
-            # архив со скриншотами объявлений
-            screens_file, screens_filename = generate_screens_ads(self.current_report_id)
-            screens_path_s3 = upload_to_s3(screens_file, screens_filename, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('SCREENSHOTS_COL_NAME'), screens_path_s3)
-
-            # презентация
-            pres_file, pres_filename = generate_presentation(self.current_report_id)
-            pres_path_s3 = upload_to_s3(pres_file, pres_filename, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('PRESENTATION_COL_NAME'), pres_path_s3)
-            #
-            # медиаплан
-            mediaplan_file, mediaplan_filename = generate_mediaplan(self.current_report_id)
-            mediaplan_path_s3 = upload_to_s3(mediaplan_file, mediaplan_filename, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('MEDIAPLAN_COL_NAME'), mediaplan_path_s3)
-
-            # отчёт
-            workreport_file, wordreport_filename = word_report_generate(self.current_report_id)
-            workreport_path_s3 = upload_to_s3(workreport_file, wordreport_filename, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('CONTENT_REPORT_COL_NAME'), workreport_path_s3)
-
-            # архив со всеми файлами
-            all_reports_zip, zip_name = all_reports_zip_create(self.current_report_id,
-                                                               (soprovod_file, soprovod_filename),
-                                                               (act_file, act_filename),
-                                                               (vegomost_file, vedomost_filename),
-                                                               (screens_file, screens_filename),
-                                                               (pres_file, pres_filename),
-                                                               (mediaplan_file, mediaplan_filename),
-                                                               (workreport_file, wordreport_filename))
-            all_reports_path = upload_to_s3(all_reports_zip, zip_name, self.minio_client)
-            write_s3path_to_bd(self.current_report_id, os.getenv('ALL_REPORT_ZIP'), all_reports_path)
+            try:
+                file_formatter = FileFormatter(self.current_report_id, self.minio_client)
+                file_formatter.connect_to_db()
+                file_formatter.create_files_by_params()
+            finally:
+                file_formatter.close_connect()
 
             # статус обработки 3 - завершено
-            write_status(self.current_report_id, 3)
+            write_status(self.current_report_id, 3, 'Успешно обработан')
 
             print(f"\n✅ Обработка отчета {report['id']} завершена")
             return True
 
         except Exception as e:
             print(f"❌ Ошибка обработки отчета: {e}")
-            write_status(self.current_report_id, 4, str(e))
-            raise e
+            write_status(self.current_report_id, 4, str(e).replace("'", ''))
             return False
 
     def setup_api_client(self, accounts: List[Dict], contract_data: Dict) -> bool:
@@ -1178,7 +1132,6 @@ def main():
                 print("\n❌ Обработка завершена с ошибками")
         except Exception as e:
             print(f"\n❌ Критическая ошибка: {e}")
-            raise e
 
         time.sleep(60)
 
