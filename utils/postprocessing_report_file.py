@@ -143,6 +143,7 @@ class FileFormatter:
         print('Подключение к базе данных')
         for _ in range(3):
             try:
+                print(f'Подключение к БД. Попытка {_+1}')
                 conn: connection = psycopg2.connect(**DB_CONFIG)
                 return conn
             except Exception as e:
